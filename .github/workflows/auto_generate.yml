@@ -1,0 +1,60 @@
+name: DMM → X投稿文 自動生成
+
+on:
+  schedule:
+    # 毎日 8時・12時・18時（JST）に生成
+    # UTC: 23時・3時・9時
+    - cron: '0 23,3,9 * * *'
+
+  workflow_dispatch:
+    inputs:
+      dmm_floor:
+        description: 'DMMフロア（videoa / videoc / anime / doujin / comic / goods）'
+        required: false
+        default: 'videoa'
+      dmm_sort:
+        description: 'ソート順（-date / rank / -price）'
+        required: false
+        default: '-date'
+      post_all:
+        description: '全件生成する場合は true'
+        required: false
+        default: 'false'
+      post_index:
+        description: '商品番号（0始まり）'
+        required: false
+        default: '0'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v5
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: 依存ライブラリをインストール
+        run: pip install requests
+
+      - name: X投稿文を生成
+        env:
+          DMM_API_ID:       ${{ secrets.DMM_API_ID }}
+          DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
+          DMM_FLOOR:  ${{ github.event.inputs.dmm_floor  || 'videoa' }}
+          DMM_SORT:   ${{ github.event.inputs.dmm_sort   || '-date' }}
+          POST_ALL:   ${{ github.event.inputs.post_all   || 'false' }}
+          POST_INDEX: ${{ github.event.inputs.post_index || '0' }}
+        run: python dmm_x_post_generator.py
+
+      - name: 📄 生成した投稿文をアーティファクトとして保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: x-posts-${{ github.run_number }}
+          path: dmm_x_posts_*.txt
+          retention-days: 7
