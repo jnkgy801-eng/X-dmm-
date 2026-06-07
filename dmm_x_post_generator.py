@@ -106,9 +106,23 @@ def parse_product(item):
 # 📝 X投稿文生成（280文字制限を考慮）
 # ================================================================
 
+def clean_url(url):
+    """URLの不正文字を除去・検証する"""
+    if not url:
+        return ''
+    # 前後の空白・改行を除去
+    url = url.strip()
+    # 全角文字や改行が混入している場合を除去
+    url = url.replace('\n', '').replace('\r', '').replace('　', '')
+    # URLが正しく始まっているか確認
+    if not url.startswith('http'):
+        return ''
+    return url
+
+
 def build_x_post(product):
     hashtags = HASHTAG_MAP.get(DMM_FLOOR, HASHTAG_MAP['default'])
-    url      = product['affiliate_url']
+    url      = clean_url(product['affiliate_url'])
 
     # タイトルを短縮（長すぎる場合）
     title = product['title']
@@ -185,6 +199,7 @@ def save_posts(posts):
             f.write(f"【投稿 {i}/{len(posts)}】\n")
             f.write(f"商品名: {product['title']}\n")
             f.write(f"文字数: {len(text)}文字\n")
+            f.write(f"URL確認: {product['affiliate_url']}\n")
             f.write("-" * 40 + "\n")
             f.write(text)
             f.write("\n\n" + "=" * 60 + "\n\n")
