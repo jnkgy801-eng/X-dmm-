@@ -70,9 +70,15 @@ def fetch_dmm_products():
     try:
         resp = requests.get(f'{DMM_API_BASE}/ItemList', params=params, timeout=15)
         data = resp.json()
-        items = data.get('result', {}).get('items', [])
+        items = data.get('result', {}).get('items', [])\
         if isinstance(items, dict):
             items = items.get('item', [])
+        
+        # ★ 追加：最初の1件のURLを確認
+        if items:
+            first = items[0]
+            print(f"affiliateURL確認: {first.get('affiliateURL', 'なし')}")
+        
         print(f'  ✅ {len(items)} 件の商品を取得しました。')
         return items
     except Exception as e:
