@@ -27,7 +27,7 @@ print('✅ 認証情報を読み込みました。')
 DMM_FLOOR = os.environ.get('DMM_FLOOR', 'videoa')
 DMM_SORT  = os.environ.get('DMM_SORT', '-date')
 DMM_HITS  = int(os.environ.get('DMM_HITS', '20'))
-POST_ALL  = os.environ.get('POST_ALL', 'false').lower() == 'true'
+POST_ALL  = os.environ.get('POST_ALL', 'true').lower() == 'true'  # デフォルトで全件保存
 POST_INDEX = int(os.environ.get('POST_INDEX', '0'))
 
 DMM_API_BASE = 'https://api.dmm.com/affiliate/v3'
