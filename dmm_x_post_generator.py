@@ -17,7 +17,7 @@ from pathlib import Path
 
 DMM_API_ID       = os.environ.get('DMM_API_ID', '')
 DMM_AFFILIATE_ID = os.environ.get('DMM_AFFILIATE_ID', '')
-#DMM_AFFILIATE_ID = "dmmkennsuke-990"
+
 if not DMM_API_ID or not DMM_AFFILIATE_ID:
     print('❌ 環境変数 DMM_API_ID / DMM_AFFILIATE_ID が設定されていません。')
     sys.exit(1)
@@ -26,9 +26,18 @@ print('✅ 認証情報を読み込みました。')
 
 DMM_FLOOR = os.environ.get('DMM_FLOOR', 'videoa')
 DMM_SORT  = os.environ.get('DMM_SORT', '-date')
-DMM_HITS  = int(os.environ.get('DMM_HITS', '20'))
-POST_ALL  = os.environ.get('POST_ALL', 'true').lower() == 'true'  # デフォルトで全件保存
-POST_INDEX = int(os.environ.get('POST_INDEX', '0'))
+
+# ----------------------------------------------------------------
+# 📌 GitHub Actions から開始番号（1始まり）を受け取り、20件取得する
+#    POST_START_INDEX=1  → 1件目〜20件目
+#    POST_START_INDEX=21 → 21件目〜40件目
+# ----------------------------------------------------------------
+POST_START_INDEX = int(os.environ.get('POST_START_INDEX', '1'))  # 1始まり
+FETCH_COUNT      = 20  # 常に20件出力
+
+# DMM API は offset(1始まり) + hits で取得範囲を指定できる
+DMM_OFFSET = POST_START_INDEX          # 取得開始位置（1始まり）
+DMM_HITS   = FETCH_COUNT               # 取得件数
 
 DMM_API_BASE = 'https://api.dmm.com/affiliate/v3'
 
@@ -52,6 +61,27 @@ HASHTAG_MAP = {
     'default': '#DMM #PR #新着',
 }
 
+# ----------------------------------------------------------------
+# 購買意欲を高めるコピーテンプレート（ランダム選択で飽きさせない）
+# ----------------------------------------------------------------
+import random
+
+COPY_TEMPLATES = [
+    "今すぐチェック！期間限定で見逃せない作品が登場🔥",
+    "ファン待望の最新作がついに配信スタート✨",
+    "クオリティに驚くはず…一度見たら止まらない😍",
+    "話題沸騰中🔥今だけポイントバックもあるかも！",
+    "これは保存確定の神作品👑早めにゲットしておこう！",
+    "高画質でいつでも・どこでも楽しめる📱💻",
+    "無料試し読み／体験あり！まずはチェックを👀",
+    "このクオリティでこの価格はお得すぎる…💸",
+    "レビュー高評価続出！納得のクオリティをぜひ体験して✨",
+    "見逃す前にダウンロード！ストリーミングにも対応🎬",
+]
+
+def get_copy():
+    return random.choice(COPY_TEMPLATES)
+
 # ================================================================
 # 🔧 DMM API 関数
 # ================================================================
@@ -65,23 +95,23 @@ def fetch_dmm_products():
         'service':      service,
         'floor':        floor_name,
         'hits':         DMM_HITS,
+        'offset':       DMM_OFFSET,   # ← 開始位置を指定
         'sort':         DMM_SORT,
         'output':       'json',
     }
+    print(f'  📌 取得範囲: {DMM_OFFSET}件目〜{DMM_OFFSET + DMM_HITS - 1}件目')
     try:
         resp = requests.get(f'{DMM_API_BASE}/ItemList', params=params, timeout=15)
         data = resp.json()
         items = data.get('result', {}).get('items', [])
         if isinstance(items, dict):
             items = items.get('item', [])
-        
-        # ★ 追加：最初の1件のURLを確認
+
+        # URL確認（末尾のみ出力してセキュリティ配慮）
         if items:
-            first = items[0]
-            # ★ 変更後（URLそのものを出力せず、文字数と末尾の文字だけを出す）
-            url_str = first.get('affiliateURL', '')
-            print(f"URLの総文字数: {len(url_str)} / 末尾4文字: {url_str[-10:]}")
-        
+            url_str = items[0].get('affiliateURL', '')
+            print(f"  URLの総文字数: {len(url_str)} / 末尾10文字: {url_str[-10:]}")
+
         print(f'  ✅ {len(items)} 件の商品を取得しました。')
         return items
     except Exception as e:
@@ -119,54 +149,66 @@ def clean_url(url):
     """URLの不正文字を除去・検証する"""
     if not url:
         return ''
-    # 前後の空白・改行を除去
     url = url.strip()
-    # 全角文字や改行が混入している場合を除去
     url = url.replace('\n', '').replace('\r', '').replace('　', '')
-    # URLが正しく始まっているか確認
     if not url.startswith('http'):
         return ''
     return url
 
 
 def build_x_post(product):
+    """
+    X投稿文を生成する。
+    
+    【画像を大きく表示させるポイント】
+    XのOGP/Twitterカードは「URLが投稿テキストの末尾に単独で存在する」場合に
+    サムネイルを大きく（summary_large_image）展開しやすくなる。
+    そのため URLは必ずテキスト末尾・単独行に置き、後続テキストを付けない。
+    ハッシュタグはURL行より前に配置する。
+    """
     hashtags = HASHTAG_MAP.get(DMM_FLOOR, HASHTAG_MAP['default'])
     url      = clean_url(product['affiliate_url'])
+    copy     = get_copy()
 
     # タイトルを短縮（長すぎる場合）
     title = product['title']
-    if len(title) > 40:
-        title = title[:40] + '…'
+    if len(title) > 35:
+        title = title[:35] + '…'
 
+    # ---- フルバージョン ----
     lines = []
     lines.append(f"🎬 {title}")
     lines.append('')
+    lines.append(copy)
+    lines.append('')
     if product['price']:
-        lines.append(f"💰 {product['price']}")
+        lines.append(f"💰 価格: {product['price']}")
     if product['actors']:
         lines.append(f"👤 {'　'.join(product['actors'])}")
     if product['genres']:
         lines.append(f"🎞 {'　'.join(product['genres'][:2])}")
     lines.append('')
-    lines.append('✅ 詳細・購入はこちら👇')
-    lines.append(url)
-    lines.append('')
     lines.append(hashtags)
+    lines.append('')
+    # ★ URLを末尾に単独行で置く（Xカード画像を大きく表示させる）
+    lines.append(url)
 
     text = '\n'.join(lines)
 
-    # 280文字を超える場合は調整
+    # 280文字を超える場合は短縮バージョンにフォールバック
     if len(text) > 280:
         lines2 = []
         lines2.append(f"🎬 {title}")
         lines2.append('')
+        lines2.append(copy)
+        lines2.append('')
         if product['price']:
             lines2.append(f"💰 {product['price']}")
         lines2.append('')
-        lines2.append('✅ 詳細はこちら👇')
-        lines2.append(url)
-        lines2.append('')
         lines2.append(hashtags)
+        lines2.append('')
+        # ★ 短縮バージョンでも必ずURLを末尾に単独行
+        lines2.append(url)
         text = '\n'.join(lines2)
 
     return text
@@ -179,21 +221,18 @@ def get_save_dir():
     """保存先ディレクトリを返す（確実にデスクトップを特定、なければ現在地）"""
     try:
         home = Path.home()
-        # 探索するデスクトップ候補
         candidates = [
-            home / "Desktop",                  # 標準的なデスクトップ
-            home / "OneDrive" / "Desktop",     # Windows OneDrive環境
+            home / "Desktop",
+            home / "OneDrive" / "Desktop",
             home / "OneDrive" / "デスクトップ",
-            home / "デスクトップ",              # 日本語Linuxなど
+            home / "デスクトップ",
         ]
-        
         for path in candidates:
             if path.exists():
                 return str(path)
     except Exception:
         pass
-        
-    # デスクトップが見つからない環境（GitHub Actionsなど）では、実行中のフォルダに保存
+    # GitHub Actions など Desktop がない環境では実行ディレクトリに保存
     return '.'
 
 
@@ -207,6 +246,7 @@ def save_posts(posts):
         f.write(f"# DMMアフィリエイト X投稿文\n")
         f.write(f"# 生成日時: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"# フロア: {DMM_FLOOR} / ソート: {DMM_SORT}\n")
+        f.write(f"# 取得範囲: {DMM_OFFSET}件目〜{DMM_OFFSET + len(posts) - 1}件目\n")
         f.write(f"# 投稿数: {len(posts)}件\n")
         f.write("=" * 60 + "\n\n")
 
@@ -237,19 +277,10 @@ if not raw_items:
 products = [parse_product(item) for item in raw_items]
 print(f'\n合計 {len(products)} 件の商品を処理します。\n')
 
-# 投稿文を生成
+# 投稿文を生成（取得した全件 = 常に最大20件）
 print('📝 X投稿文を生成中...')
 posts = []
-
-if POST_ALL:
-    targets = products
-else:
-    if POST_INDEX >= len(products):
-        print(f'❌ POST_INDEX={POST_INDEX} が範囲外です（0〜{len(products)-1}）')
-        sys.exit(1)
-    targets = [products[POST_INDEX]]
-
-for p in targets:
+for p in products:
     text = build_x_post(p)
     posts.append((p, text))
     title_short = p['title'][:30]
