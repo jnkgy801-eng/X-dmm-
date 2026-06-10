@@ -129,22 +129,30 @@ def parse_product(item):
         price_val = prices.get('price') or prices.get('list_price') or ''
         if price_val:
             price_num = ''.join(c for c in str(price_val) if c.isdigit())
-            price_str = f'¥{int(price_num):,}' if price_num else ''
+            price_str = f'\u00a5{int(price_num):,}' if price_num else ''
     actors = [a.get('name', '') for a in (item.get('iteminfo', {}).get('actress') or [])][:3]
     genres = [g.get('name', '') for g in (item.get('iteminfo', {}).get('genre') or [])][:3]
     maker  = ((item.get('iteminfo', {}).get('maker') or [{}])[0]).get('name', '')
-    return {
-        'title':         title,
-        'affiliate_url': affiliate_url,
-        'price':         price_str,
-        'actors':        actors,
-        'genres':        genres,
-        'maker':         maker,
-    }
 
-# ================================================================
-# 📝 X投稿文生成（280文字制限を考慮）
-# ================================================================
+    # ★ サンプル動画URL（解像度の高い順に取得）
+    sample_movie_url = ''
+    smv = item.get('sampleMovieURL', {})
+    if smv:
+        for key in ['size_720_480', 'size_644_414', 'size_560_360', 'size_476_306']:
+            val = smv.get(key, '')
+            if val:
+                sample_movie_url = val.strip()
+                break
+
+    return {
+        'title':            title,
+        'affiliate_url':    affiliate_url,
+        'price':            price_str,
+        'actors':           actors,
+        'genres':           genres,
+        'maker':            maker,
+        'sample_movie_url': sample_movie_url,
+    }
 
 def clean_url(url):
     if not url:
@@ -155,16 +163,27 @@ def clean_url(url):
     return url
 
 
+def actor_tags(actors):
+    """女優名を #タグ 形式に変換（スペースを除去してハッシュタグ化）"""
+    return '　'.join('#' + a.replace(' ', '').replace('　', '') for a in actors if a)
+
+
 def build_x_post(product):
     """
-    【画像を大きく表示させるポイント】
-    XはURLの直後にハッシュタグのみが続く構造のとき、
-    OGPカードを summary_large_image（大カード）で展開しやすい。
-    構造: 本文 → URL（単独行）→ ハッシュタグ
+    【投稿文の構造】
+    本文（タイトル・コピー・価格・女優#タグ・ジャンル）
+    ↓
+    購入URL（単独行）→ OGP大カード表示を促進
+    ↓
+    サンプル動画URL（あれば）
+    ↓
+    ハッシュタグ
     """
-    hashtags = HASHTAG_MAP.get(DMM_FLOOR, HASHTAG_MAP['default'])
-    url      = clean_url(product['affiliate_url'])
-    copy     = get_copy()
+    hashtags  = HASHTAG_MAP.get(DMM_FLOOR, HASHTAG_MAP['default'])
+    url       = clean_url(product['affiliate_url'])
+    sample    = clean_url(product.get('sample_movie_url', ''))
+    copy      = get_copy()
+    act_tags  = actor_tags(product['actors'])  # ★ 女優#タグ
 
     title = product['title']
     if len(title) > 35:
@@ -177,16 +196,19 @@ def build_x_post(product):
     lines.append('')
     if product['price']:
         lines.append(f"💰 価格: {product['price']}")
-    if product['actors']:
-        lines.append(f"👤 {'　'.join(product['actors'])}")
+    if act_tags:
+        lines.append(f"👤 {act_tags}")          # ★ #名前 形式で出演者
     if product['genres']:
         lines.append(f"🎞 {'　'.join(product['genres'][:2])}")
     lines.append('')
-    lines.append(url)
+    lines.append(url)                            # 購入URL（OGPカード用）
+    if sample:
+        lines.append(f"▶ サンプル動画: {sample}")  # ★ サンプル動画URL
     lines.append(hashtags)
 
     text = '\n'.join(lines)
 
+    # 280文字超の場合は短縮バージョンへ
     if len(text) > 280:
         lines2 = []
         lines2.append(f"🎬 {title}")
@@ -195,8 +217,12 @@ def build_x_post(product):
         lines2.append('')
         if product['price']:
             lines2.append(f"💰 {product['price']}")
+        if act_tags:
+            lines2.append(f"👤 {act_tags}")
         lines2.append('')
         lines2.append(url)
+        if sample:
+            lines2.append(f"▶ サンプル: {sample}")
         lines2.append(hashtags)
         text = '\n'.join(lines2)
 
@@ -252,6 +278,8 @@ def save_posts(all_sections):
                 f.write(f"商品名: {product['title']}\n")
                 f.write(f"文字数: {len(text)}文字\n")
                 f.write(f"URL確認: {product['affiliate_url']}\n")
+                if product.get('sample_movie_url'):
+                    f.write(f"サンプル動画: {product['sample_movie_url']}\n")
                 f.write("-" * 40 + "\n")
                 f.write(text)
                 f.write("\n\n")
