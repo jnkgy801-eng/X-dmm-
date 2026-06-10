@@ -159,12 +159,18 @@ def clean_url(url):
 def build_x_post(product):
     """
     X投稿文を生成する。
-    
+
     【画像を大きく表示させるポイント】
-    XのOGP/Twitterカードは「URLが投稿テキストの末尾に単独で存在する」場合に
-    サムネイルを大きく（summary_large_image）展開しやすくなる。
-    そのため URLは必ずテキスト末尾・単独行に置き、後続テキストを付けない。
-    ハッシュタグはURL行より前に配置する。
+    XはURLの直後にハッシュタグ（#）のみが続く構造のとき、
+    OGPカードを summary_large_image（大カード）で展開しやすい。
+    逆にURLより前に文章があるとカードが小さくなる場合がある。
+
+    構造：
+      本文テキスト（タイトル・コピー・価格など）
+      ↓
+      URL（単独行）         ← カード展開はここで発生
+      ↓
+      ハッシュタグ           ← URLの後ろに置くことで大カード化を促進
     """
     hashtags = HASHTAG_MAP.get(DMM_FLOOR, HASHTAG_MAP['default'])
     url      = clean_url(product['affiliate_url'])
@@ -188,10 +194,9 @@ def build_x_post(product):
     if product['genres']:
         lines.append(f"🎞 {'　'.join(product['genres'][:2])}")
     lines.append('')
-    lines.append(hashtags)
-    lines.append('')
-    # ★ URLを末尾に単独行で置く（Xカード画像を大きく表示させる）
+    # ★ URLを先に置き、ハッシュタグはURLの後ろ → 大カード表示を促進
     lines.append(url)
+    lines.append(hashtags)
 
     text = '\n'.join(lines)
 
@@ -205,10 +210,9 @@ def build_x_post(product):
         if product['price']:
             lines2.append(f"💰 {product['price']}")
         lines2.append('')
-        lines2.append(hashtags)
-        lines2.append('')
-        # ★ 短縮バージョンでも必ずURLを末尾に単独行
+        # ★ 短縮でも同じ構造：URL → ハッシュタグ
         lines2.append(url)
+        lines2.append(hashtags)
         text = '\n'.join(lines2)
 
     return text
