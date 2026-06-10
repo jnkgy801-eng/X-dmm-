@@ -8,6 +8,15 @@ on:
         required: true
         default: '1'
         type: number
+      dmm_sort_mode:
+        description: 'ソートモード'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - both   # 新着20件＋人気20件（デフォルト・推奨）
+          - date   # 新着順のみ20件
+          - rank   # 人気順のみ20件
       dmm_floor:
         description: 'フロア種別'
         required: false
@@ -20,21 +29,10 @@ on:
           - doujin
           - comic
           - goods
-      dmm_sort:
-        description: 'ソート順'
-        required: false
-        default: '-date'
-        type: choice
-        options:
-          - '-date'    # 新着順
-          - '-rank'    # 人気順
-          - '-price'   # 価格高い順
-          - 'price'    # 価格安い順
-          - '-review'  # レビュー順
 
-  # スケジュール実行例（毎日9時に1〜20件目を自動生成）
-  # schedule:
-  #   - cron: '0 0 * * *'   # UTC 0:00 = JST 9:00
+  # スケジュール実行：毎日 JST 9:00 に新着＋人気の両方を自動生成
+  schedule:
+    - cron: '0 0 * * *'   # UTC 0:00 = JST 9:00
 
 jobs:
   generate-posts:
@@ -56,11 +54,10 @@ jobs:
         env:
           DMM_API_ID:       ${{ secrets.DMM_API_ID }}
           DMM_AFFILIATE_ID: ${{ secrets.DMM_AFFILIATE_ID }}
-          # workflow_dispatch で入力された値を使用。
-          # スケジュール実行時は inputs が空なので || '1' でデフォルト値を補完。
           POST_START_INDEX: ${{ github.event.inputs.post_start_index || '1' }}
+          # both=新着20件+人気20件、スケジュール実行時もbothをデフォルトに
+          DMM_SORT_MODE:    ${{ github.event.inputs.dmm_sort_mode || 'both' }}
           DMM_FLOOR:        ${{ github.event.inputs.dmm_floor || 'videoa' }}
-          DMM_SORT:         ${{ github.event.inputs.dmm_sort || '-date' }}
         run: python dmm_x_post_generator.py
 
       - name: 生成ファイルをアーティファクトとしてアップロード
@@ -68,4 +65,4 @@ jobs:
         with:
           name: dmm_x_posts_${{ github.run_number }}
           path: dmm_x_posts_*.txt
-          retention-days: 7   # 7日間保存
+          retention-days: 7
