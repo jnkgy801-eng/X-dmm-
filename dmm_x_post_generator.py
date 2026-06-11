@@ -1,6 +1,6 @@
 """
 💰🐦 DMMアフィリエイト → X（Twitter）投稿文ジェネレーター
-DMMから商品情報を取得し、X投稿用テキストをデスクトップに保存します。
+DMMから商品情報を取得し、X投稿用テキストをデスクトップまたは指定フォルダに保存します。
 （X APIは使わないので完全無料で動作します）
 """
 
@@ -41,11 +41,20 @@ SORT_TARGETS = {
 }
 SORT_LIST = SORT_TARGETS.get(DMM_SORT_MODE, SORT_TARGETS['both'])
 
-# 取得開始位置（1始まり）・件数
-POST_START_INDEX = int(os.environ.get('POST_START_INDEX', '1'))
-FETCH_COUNT      = 20
-DMM_OFFSET       = POST_START_INDEX
-DMM_HITS         = FETCH_COUNT
+# ----------------------------------------------------------------
+# 🎲 取得開始位置（環境変数未設定時はランダム: 1〜480）
+# ----------------------------------------------------------------
+_raw_start = os.environ.get('POST_START_INDEX', '')
+if _raw_start.strip().isdigit():
+    POST_START_INDEX = int(_raw_start.strip())
+    print(f'📌 指定された取得開始番号: {POST_START_INDEX}')
+else:
+    POST_START_INDEX = random.randint(1, 480)
+    print(f'🎲 ランダム取得開始番号: {POST_START_INDEX}')
+
+FETCH_COUNT = 20
+DMM_OFFSET  = POST_START_INDEX
+DMM_HITS    = FETCH_COUNT
 
 DMM_API_BASE = 'https://api.dmm.com/affiliate/v3'
 
@@ -90,7 +99,6 @@ def get_copy():
 # ================================================================
 
 def fetch_dmm_products(sort_key, sort_label):
-    """sort_key: '-date'（新着順）または '-rank'（人気順）"""
     service, floor_name = FLOOR_SERVICE_MAP.get(DMM_FLOOR, ('digital', 'videoa'))
     params = {
         'api_id':       DMM_API_ID,
@@ -134,7 +142,6 @@ def parse_product(item):
     genres = [g.get('name', '') for g in (item.get('iteminfo', {}).get('genre') or [])][:3]
     maker  = ((item.get('iteminfo', {}).get('maker') or [{}])[0]).get('name', '')
 
-    # ★ サンプル動画URL（解像度の高い順に取得）
     sample_movie_url = ''
     smv = item.get('sampleMovieURL', {})
     if smv:
@@ -164,26 +171,15 @@ def clean_url(url):
 
 
 def actor_tags(actors):
-    """女優名を #タグ 形式に変換（スペースを除去してハッシュタグ化）"""
     return '　'.join('#' + a.replace(' ', '').replace('　', '') for a in actors if a)
 
 
 def build_x_post(product):
-    """
-    【投稿文の構造】
-    本文（タイトル・コピー・価格・女優#タグ・ジャンル）
-    ↓
-    購入URL（単独行）→ OGP大カード表示を促進
-    ↓
-    サンプル動画URL（あれば）
-    ↓
-    ハッシュタグ
-    """
     hashtags  = HASHTAG_MAP.get(DMM_FLOOR, HASHTAG_MAP['default'])
     url       = clean_url(product['affiliate_url'])
     sample    = clean_url(product.get('sample_movie_url', ''))
     copy      = get_copy()
-    act_tags  = actor_tags(product['actors'])  # ★ 女優#タグ
+    act_tags  = actor_tags(product['actors'])
 
     title = product['title']
     if len(title) > 35:
@@ -197,18 +193,17 @@ def build_x_post(product):
     if product['price']:
         lines.append(f"💰 価格: {product['price']}")
     if act_tags:
-        lines.append(f"👤 {act_tags}")          # ★ #名前 形式で出演者
+        lines.append(f"👤 {act_tags}")
     if product['genres']:
         lines.append(f"🎞 {'　'.join(product['genres'][:2])}")
     lines.append('')
-    lines.append(url)                            # 購入URL（OGPカード用）
+    lines.append(url)
     if sample:
-        lines.append(f"▶ サンプル動画: {sample}")  # ★ サンプル動画URL
+        lines.append(f"▶ サンプル動画: {sample}")
     lines.append(hashtags)
 
     text = '\n'.join(lines)
 
-    # 280文字超の場合は短縮バージョンへ
     if len(text) > 280:
         lines2 = []
         lines2.append(f"🎬 {title}")
@@ -229,10 +224,34 @@ def build_x_post(product):
     return text
 
 # ================================================================
-# 💾 保存
+# 💾 保存先を決定
 # ================================================================
 
 def get_save_dir():
+    """
+    保存先の優先順位:
+    1. 環境変数 SAVE_DIR で明示指定されたパス
+    2. GitHub Actions 環境 (SAVE_TO_REPO=true) → カレントディレクトリ（後でoutputsへ移動）
+    3. デスクトップ（ローカル実行時）
+       - ~/Desktop
+       - ~/OneDrive/Desktop
+       - ~/OneDrive/デスクトップ
+       - ~/デスクトップ
+    4. カレントディレクトリ（フォールバック）
+    """
+    # 環境変数で明示指定
+    explicit = os.environ.get('SAVE_DIR', '').strip()
+    if explicit:
+        Path(explicit).mkdir(parents=True, exist_ok=True)
+        return explicit
+
+    # GitHub Actions上での実行（outputs/フォルダに保存）
+    if os.environ.get('SAVE_TO_REPO', '').lower() == 'true':
+        out = Path('outputs')
+        out.mkdir(exist_ok=True)
+        return str(out)
+
+    # ローカル実行時はデスクトップを探す
     try:
         home = Path.home()
         for path in [
@@ -245,14 +264,11 @@ def get_save_dir():
                 return str(path)
     except Exception:
         pass
+
     return '.'
 
 
 def save_posts(all_sections):
-    """
-    all_sections: [ (sort_label, [(product, text), ...]), ... ]
-    新着順・人気順をセクション分けして1ファイルに保存する
-    """
     save_dir  = get_save_dir()
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     filename  = f'dmm_x_posts_{timestamp}.txt'
@@ -317,7 +333,6 @@ if not all_sections:
     print('❌ 商品が1件も取得できませんでした。')
     sys.exit(1)
 
-# プレビュー（最初のセクションの1件目）
 first_label, first_posts = all_sections[0]
 print('\n' + '=' * 60)
 print(f'📋 投稿文プレビュー（{first_label} 1件目）')
