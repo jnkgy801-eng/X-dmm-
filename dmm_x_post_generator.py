@@ -12,7 +12,7 @@ import random
 from pathlib import Path
 
 # ================================================================
-# ⚙️  設定（環境変数から読み込み）
+# ⚙️ 設定（環境変数から読み込み）
 # ================================================================
 
 DMM_API_ID       = os.environ.get('DMM_API_ID', '')
@@ -166,26 +166,22 @@ def build_x_post(p):
         icon = "📖"
         floor_tag = "#FANZAコミック"
 
-    tag_str = " ".join([f"#{t.replace(' ', '').replace('　', '')}" for t in p["tags"]])
+    tag_str = " ".join([f"#{t.replace(' ', '').replace(' ', '')}" for t in p["tags"]])
     
-    text = f"{icon} {title}
+    # 【修正箇所】トリプルクォーテーションに変更し、改行が崩れないように修正
+    text = f"""{icon} {title}
 
-"
-    text += f"注目作品を今すぐチェック！✨
+注目作品を今すぐチェック！✨
 
-"
-    text += f"💰 価格: {p['price']}
-"
+💰 価格: {p['price']}
+"""
     if tag_str:
-        text += f"👤 {tag_str}
-"
-    text += f"
-{p['url']}
-"
+        text += f"👤 {tag_str}\n"
+    
+    text += f"\n{p['url']}\n"
     
     if p['sample_url']:
-        text += f"▶ サンプル動画あり
-"
+        text += f"▶ サンプル動画あり\n"
         
     text += f"{floor_tag} #PR"
     return text
@@ -229,13 +225,13 @@ def save_output(all_sections):
     return filepath
 
 if __name__ == "__main__":
-    print(f'🛍️  DMM/FANZAから商品情報を取得中（フロア: {DMM_FLOOR} / モード: {DMM_SORT_MODE}）...')
+    print(f'🛍️ DMM/FANZAから商品情報を取得中（フロア: {DMM_FLOOR} / モード: {DMM_SORT_MODE}）...')
     all_sections = []
 
     for sort_key, sort_label in SORT_LIST:
         raw_items = fetch_dmm_products(sort_key, sort_label)
         if not raw_items:
-            print(f'  ⚠️  [{sort_label}] 商品が取得できませんでした。スキップします。')
+            print(f'  ⚠️ [{sort_label}] 商品が取得できませんでした。スキップします。')
             continue
 
         products = [parse_product(item) for item in raw_items]
@@ -246,7 +242,7 @@ if __name__ == "__main__":
             print(f'  💰 価格フィルター適用: {before_count}件 → {len(products)}件')
 
         if not products:
-            print(f'  ⚠️  [{sort_label}] 価格条件に合う商品がありませんでした。スキップします。')
+            print(f'  ⚠️ [{sort_label}] 価格条件に合う商品がありませんでした。スキップします。')
             continue
 
         print(f'  📝 [{sort_label}] 投稿文を生成中...')
