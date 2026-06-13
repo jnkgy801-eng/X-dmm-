@@ -52,7 +52,7 @@ else:
     POST_START_INDEX = random.randint(1, 480)
     print(f'🎲 ランダム取得開始番号: {POST_START_INDEX}')
 
-FETCH_COUNT = 20
+FETCH_COUNT = 100
 DMM_OFFSET  = POST_START_INDEX
 DMM_HITS    = FETCH_COUNT
 
